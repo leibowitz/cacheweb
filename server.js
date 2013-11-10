@@ -129,8 +129,9 @@ http.createServer(function (req, res) {
 
   var cacheKey = computeKey(req.headers['host'], req.url, req.method);
   
-  if( req.headers['cache-control'] !== undefined 
-    && req.headers['cache-control'] == 'no-cache'
+  if( (req.headers['cache-control'] !== undefined 
+    && req.headers['cache-control'] == 'no-cache')
+    || req.method != 'GET' 
   ) {
     // Force request
     eventEmitter.emit('doRequest', req, res, cacheKey);
