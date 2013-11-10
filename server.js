@@ -101,6 +101,35 @@ function isConditional(req) {
     return false;
 }
 
+var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
+    
+    if( cacheIt ) {
+        var headersKey = getHeadersKey(cacheKey);
+        var bodyKey = getBodyKey(cacheKey);
+
+        client.hset(headersKey, 'statusCode', proxyResponse.statusCode);
+        client.hset(headersKey, 'headers', JSON.stringify(proxyResponse.headers));
+        client.expire(headersKey, cacheIt.toString());
+
+        client.del(bodyKey);
+    }
+    
+}
+
+var cacheContent = function cacheContent(cacheKey, cacheIt, chunk) {
+    if( cacheIt ) {
+        var bodyKey = getBodyKey(cacheKey);
+        client.append(bodyKey, chunk);
+    }
+}
+
+var expireContent = function expireContent(cacheKey, cacheIt) {
+    if( cacheIt ) {
+        var bodyKey = getBodyKey(cacheKey);
+        client.expire(bodyKey, cacheIt);
+    }
+}
+
 var doRequest = function doRequest(req, res, cacheKey) {
 
   var parts = req.headers['host'].trim().split(':');
@@ -136,27 +165,17 @@ var doRequest = function doRequest(req, res, cacheKey) {
     res.writeHead(proxyResponse.statusCode, headers);
     
     var cacheIt = canStore(proxyResponse.statusCode, proxyResponse.headers);
-    
-    if( cacheIt ) {
-        var headersKey = getHeadersKey(cacheKey);
-        var bodyKey = getBodyKey(cacheKey);
 
-        client.hset(headersKey, 'statusCode', proxyResponse.statusCode);
-        client.hset(headersKey, 'headers', JSON.stringify(proxyResponse.headers));
-        client.expire(headersKey, cacheIt.toString());
-
-        client.del(bodyKey);
-    }
+    eventEmitter.emit('cacheResponse', cacheKey, proxyResponse, cacheIt);
 
     proxyResponse.setEncoding('utf8');
     proxyResponse.on('data', function (chunk) {
         res.write(chunk);
-        if( cacheIt ) {
-            client.append(bodyKey, chunk);
-        }
+        eventEmitter.emit('cacheContent', cacheKey, cacheIt, chunk);
     });
 
     proxyResponse.on('end', function(){
+        eventEmitter.emit('expireContent', cacheKey, cacheIt);
         res.end();
     });
 
@@ -224,6 +243,9 @@ serverHostname = '127.0.0.1';
 server.listen(serverPort, serverHostname);
 
 eventEmitter.on('doRequest', doRequest);
+eventEmitter.on('cacheResponse', cacheResponse);
+eventEmitter.on('cacheContent', cacheContent);
+eventEmitter.on('expireContent', expireContent);
 
 
 console.log('Server running at http://'+serverHostname+':'+serverPort+'/');
