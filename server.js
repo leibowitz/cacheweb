@@ -20,29 +20,56 @@ function getBodyKey(key) {
 }
 
 function canStore(headers) {
-    var params = headers['cache-control'].split(',');
-    var seconds = false;
+    // rules are
+    // if not private
+    // and not no-store nor no cache
+    // then use the value in this order
+    // s-maxage
+    // max-age
+    // expires
+    // Exceptions are 
+    // must-revalidate
+    // proxy-revalidate
+
+    if( headers['cache-control'] === undefined ) {
+        return false;
+    }
+
+    var params = headers['cache-control'].trim().split(',');
+
+    var values = {};
+
     for(idx in params) {
-        if( params[idx].indexOf('private') !== -1 ) {
-            return false;
-        }
-        if( params[idx].indexOf('no-cache') !== -1 ) {
-            return false;
-        }
-        if( params[idx].indexOf('no-store') !== -1 ) {
-            return false;
-        }
         if( params[idx].indexOf('=') !== -1 ) {
-            var parts = params[idx].split('=');
-            if( parts[0] == 'max-age' ) {
-                seconds = parts[1];
+            var parts = params[idx].trim().split('=');
+            key = parts[0].trim();
+            val = parts[1].trim();
+            if( key == 's-maxage' || key == 'max-age' ) {
+                val = parseInt(val);
             }
-            else if( parts[0] == 's-maxage' ) {
-                seconds = parts[1];
-            }
+            values[ key ] = val;
+        } else {
+            values[ params[idx].trim() ] = 1;
         }
     }
-    return seconds;
+    
+    if( 
+        values['private'] !== undefined ||
+        values['no-cache'] !== undefined ||
+        values['no-store'] !== undefined 
+    ) {
+        // Do not cache
+        return false;
+    }
+
+    if( values['s-maxage'] !== undefined ) {
+        return values['s-maxage'];
+    }
+    else if( values['max-age'] !== undefined ) {
+        return values['max-age'];
+    }
+    
+    return false;
 }
 
 http.createServer(function (req, res) {
@@ -82,7 +109,7 @@ http.createServer(function (req, res) {
 
             client.hset(headersKey, 'statusCode', proxyResponse.statusCode);
             client.hset(headersKey, 'headers', JSON.stringify(proxyResponse.headers));
-            client.expire(keadersKey, cacheIt);
+            client.expire(headersKey, cacheIt.toString());
 
             client.del(bodyKey);
         }
