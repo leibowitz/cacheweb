@@ -106,6 +106,8 @@ var doRequest = function doRequest(req, res, cacheKey) {
   delete req.headers['host'];
 
   var proxyRequest = http.request({
+    // Disable connection pooling
+    'agent': false,
     'method': req.method,
     'hostname': host,
     'headers': req.headers,
