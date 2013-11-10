@@ -128,24 +128,32 @@ eventEmitter.on('doRequest', doRequest);
 http.createServer(function (req, res) {
 
   var cacheKey = computeKey(req.headers['host'], req.url, req.method);
+  
+  if( req.headers['cache-control'] !== undefined 
+    && req.headers['cache-control'] == 'no-cache'
+  ) {
+    // Force request
+    eventEmitter.emit('doRequest', req, res, cacheKey);
+  } else {
 
-  client.hgetall(getHeadersKey(cacheKey), function(err, results) {
-    
-    if( results !== null ) {
-        var headers = JSON.parse(results['headers']);
-        headers['x-cache'] = 'HIT';
-        res.writeHead(results['statusCode'], headers);
-        client.get(getBodyKey(cacheKey), function(err, reply) {
-            res.write(reply);
-        });
-        res.end();
-    } else {
+      client.hgetall(getHeadersKey(cacheKey), function(err, results) {
+        
+        if( results !== null ) {
+            var headers = JSON.parse(results['headers']);
+            headers['x-cache'] = 'HIT';
+            res.writeHead(results['statusCode'], headers);
+            client.get(getBodyKey(cacheKey), function(err, reply) {
+                res.write(reply);
+            });
+            res.end();
+        } else {
 
-      eventEmitter.emit('doRequest', req, res, cacheKey);
+          eventEmitter.emit('doRequest', req, res, cacheKey);
 
-    }
+        }
 
-  });
+      });
+  }
 
 
 }).listen(1337, '127.0.0.1');
