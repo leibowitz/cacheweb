@@ -3,6 +3,8 @@ var url  = require('url');
 var clone  = require('clone');
 var redis  = require('redis'),
     client = redis.createClient();
+var events = require('events'),
+    eventEmitter = new events.EventEmitter();
 
 
 function computeKey(host, path, method) {
@@ -74,11 +76,58 @@ function canStore(headers) {
     return false;
 }
 
-http.createServer(function (req, res) {
-
+var doRequest = function doRequest(req, res, cacheKey) {
   var host = req.headers['host'];
 
-  var cacheKey = computeKey(host, req.url, req.method);
+  delete req.headers['host'];
+
+  var proxyRequest = http.request({
+    'method': req.method,
+    'hostname': host,
+    'headers': req.headers,
+    'path': req.url
+  }, function(proxyResponse) {
+
+    delete proxyResponse.headers['content-length'];
+    
+    var headers = clone(proxyResponse.headers);
+    headers['x-cache'] = 'MISS';
+
+    res.writeHead(proxyResponse.statusCode, headers);
+    
+    var cacheIt = canStore(proxyResponse.headers);
+    
+    if( cacheIt ) {
+        var headersKey = getHeadersKey(cacheKey);
+        var bodyKey = getBodyKey(cacheKey);
+
+        client.hset(headersKey, 'statusCode', proxyResponse.statusCode);
+        client.hset(headersKey, 'headers', JSON.stringify(proxyResponse.headers));
+        client.expire(headersKey, cacheIt.toString());
+
+        client.del(bodyKey);
+    }
+
+    proxyResponse.setEncoding('utf8');
+    proxyResponse.on('data', function (chunk) {
+        res.write(chunk);
+        if( cacheIt ) {
+            client.append(bodyKey, chunk);
+        }
+    });
+
+    proxyResponse.on('end', function(){
+        res.end();
+    });
+  });
+  proxyRequest.end();
+}
+
+eventEmitter.on('doRequest', doRequest);
+
+http.createServer(function (req, res) {
+
+  var cacheKey = computeKey(req.headers['host'], req.url, req.method);
 
   client.hgetall(getHeadersKey(cacheKey), function(err, results) {
     
@@ -92,48 +141,8 @@ http.createServer(function (req, res) {
         res.end();
     } else {
 
-      delete req.headers['host'];
+      eventEmitter.emit('doRequest', req, res, cacheKey);
 
-      var proxyRequest = http.request({
-        'method': req.method,
-        'hostname': host,
-        'headers': req.headers,
-        'path': req.url
-      }, function(proxyResponse) {
-
-        delete proxyResponse.headers['content-length'];
-        
-        var headers = clone(proxyResponse.headers);
-        headers['x-cache'] = 'MISS';
-
-        res.writeHead(proxyResponse.statusCode, headers);
-        
-        var cacheIt = canStore(proxyResponse.headers);
-        
-        if( cacheIt ) {
-            var headersKey = getHeadersKey(cacheKey);
-            var bodyKey = getBodyKey(cacheKey);
-
-            client.hset(headersKey, 'statusCode', proxyResponse.statusCode);
-            client.hset(headersKey, 'headers', JSON.stringify(proxyResponse.headers));
-            client.expire(headersKey, cacheIt.toString());
-
-            client.del(bodyKey);
-        }
-
-        proxyResponse.setEncoding('utf8');
-        proxyResponse.on('data', function (chunk) {
-            res.write(chunk);
-            if( cacheIt ) {
-                client.append(bodyKey, chunk);
-            }
-        });
-
-        proxyResponse.on('end', function(){
-            res.end();
-        });
-      });
-      proxyRequest.end();
     }
 
   });
