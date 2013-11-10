@@ -1,7 +1,9 @@
 var http = require('http');
 var url  = require('url');
+var clone  = require('clone');
 var redis  = require('redis'),
     client = redis.createClient();
+
 
 function computeKey(host, path, method) {
     return method + ':' + host + ':' + path;
@@ -81,7 +83,9 @@ http.createServer(function (req, res) {
   client.hgetall(getHeadersKey(cacheKey), function(err, results) {
     
     if( results !== null ) {
-        res.writeHead(results['statusCode'], JSON.parse(results['headers']));
+        var headers = JSON.parse(results['headers']);
+        headers['x-cache'] = 'HIT';
+        res.writeHead(results['statusCode'], headers);
         client.get(getBodyKey(cacheKey), function(err, reply) {
             res.write(reply);
         });
@@ -98,8 +102,11 @@ http.createServer(function (req, res) {
       }, function(proxyResponse) {
 
         delete proxyResponse.headers['content-length'];
+        
+        var headers = clone(proxyResponse.headers);
+        headers['x-cache'] = 'MISS';
 
-        res.writeHead(proxyResponse.statusCode, proxyResponse.headers);
+        res.writeHead(proxyResponse.statusCode, headers);
         
         var cacheIt = canStore(proxyResponse.headers);
         
