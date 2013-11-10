@@ -23,7 +23,12 @@ function getBodyKey(key) {
     return makeKeyField(key, 'body');
 }
 
-function canStore(headers) {
+function canStore(statusCode, headers) {
+    // Do not cache 304 response to conditional requests
+    if( isConditional(headers) && statusCode == 304 ) {
+        return false;
+    }
+
     // rules are
     // if not private
     // and not no-store nor no cache
@@ -76,6 +81,25 @@ function canStore(headers) {
     return false;
 }
 
+function isNotModified(req, resp) {
+    if( req['if-modified-since'] !== undefined 
+        && resp['last-modified'] !== undefined ) {
+        var condDate = new Date(req['if-modified-since']);
+        var lastModified = new Date(resp['last-modified']);
+        return condDate > lastModified;
+    }
+    return false;
+}
+
+function isConditional(req) {
+
+    if( req['if-modified-since'] !== undefined
+    || req['if-none-match'] !== undefined ) {
+        return true;
+    }
+    return false;
+}
+
 var doRequest = function doRequest(req, res, cacheKey) {
   var host = req.headers['host'];
 
@@ -87,7 +111,7 @@ var doRequest = function doRequest(req, res, cacheKey) {
     'headers': req.headers,
     'path': req.url
   }, function(proxyResponse) {
-
+    
     delete proxyResponse.headers['content-length'];
     
     var headers = clone(proxyResponse.headers);
@@ -95,7 +119,7 @@ var doRequest = function doRequest(req, res, cacheKey) {
 
     res.writeHead(proxyResponse.statusCode, headers);
     
-    var cacheIt = canStore(proxyResponse.headers);
+    var cacheIt = canStore(proxyResponse.statusCode, proxyResponse.headers);
     
     if( cacheIt ) {
         var headersKey = getHeadersKey(cacheKey);
@@ -119,6 +143,7 @@ var doRequest = function doRequest(req, res, cacheKey) {
     proxyResponse.on('end', function(){
         res.end();
     });
+    
   });
   proxyRequest.end();
 }
@@ -131,7 +156,7 @@ http.createServer(function (req, res) {
   
   if( (req.headers['cache-control'] !== undefined 
     && req.headers['cache-control'] == 'no-cache')
-    || req.method != 'GET' 
+    || (req.method != 'GET' && req.method != 'HEAD' )
   ) {
     // Force request
     eventEmitter.emit('doRequest', req, res, cacheKey);
@@ -142,11 +167,26 @@ http.createServer(function (req, res) {
         if( results !== null ) {
             var headers = JSON.parse(results['headers']);
             headers['x-cache'] = 'HIT';
-            res.writeHead(results['statusCode'], headers);
-            client.get(getBodyKey(cacheKey), function(err, reply) {
-                res.write(reply);
-            });
-            res.end();
+
+            if( isNotModified(req.headers, headers) ) {
+                // answer to conditional requests
+                headers['content-length'] = 0;
+                res.writeHead(304, headers);
+                res.end();
+            }
+            else {
+                res.writeHead(results['statusCode'], headers);
+
+                if( req.method == 'HEAD') {
+                    res.end();
+                } else {
+                    client.get(getBodyKey(cacheKey), function(err, reply) {
+                        res.write(reply);
+                        res.end();
+                    });
+                }
+
+            }
         } else {
 
           eventEmitter.emit('doRequest', req, res, cacheKey);
