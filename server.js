@@ -1,4 +1,5 @@
 var http = require('http');
+var dns = require('dns');
 var url  = require('url');
 var clone  = require('clone');
 var redis  = require('redis'),
@@ -101,8 +102,21 @@ function isConditional(req) {
 }
 
 var doRequest = function doRequest(req, res, cacheKey) {
-  var host = req.headers['host'];
 
+  var parts = req.headers['host'].trim().split(':');
+  var host = parts[0].trim();
+  var port = (parts[1] || '80').trim();
+
+  dns.lookup(host, function (err, addresses) {
+    if (err) throw err;
+
+    if( addresses == serverHostname && port == serverPort ) {
+        // better stop now to avoid request loop
+        res.writeHead(400, {});
+        res.end();
+    }
+  });
+  
   delete req.headers['host'];
 
   var proxyRequest = http.request({
@@ -145,14 +159,13 @@ var doRequest = function doRequest(req, res, cacheKey) {
     proxyResponse.on('end', function(){
         res.end();
     });
+
     
   });
   proxyRequest.end();
 }
 
-eventEmitter.on('doRequest', doRequest);
-
-http.createServer(function (req, res) {
+var server = http.createServer(function (req, res) {
 
   var cacheKey = computeKey(req.headers['host'], req.url, req.method);
   
@@ -199,6 +212,19 @@ http.createServer(function (req, res) {
   }
 
 
-}).listen(1337, '127.0.0.1');
-console.log('Server running at http://127.0.0.1:1337/');
+})
+
+server.on('error', function(err){
+    console.log(err);
+});
+
+var serverPort = 1337, 
+serverHostname = '127.0.0.1';
+
+server.listen(serverPort, serverHostname);
+
+eventEmitter.on('doRequest', doRequest);
+
+
+console.log('Server running at http://'+serverHostname+':'+serverPort+'/');
 
