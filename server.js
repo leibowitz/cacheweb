@@ -168,7 +168,6 @@ var doRequest = function doRequest(req, res, cacheKey) {
 
     eventEmitter.emit('cacheResponse', cacheKey, proxyResponse, cacheIt);
 
-    proxyResponse.setEncoding('utf8');
     proxyResponse.on('data', function (chunk) {
         res.write(chunk);
         eventEmitter.emit('cacheContent', cacheKey, cacheIt, chunk);
