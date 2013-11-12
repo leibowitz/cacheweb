@@ -2,6 +2,8 @@ var http = require('http');
 var dns = require('dns');
 var url  = require('url');
 var clone  = require('clone');
+var httpProxy = require('http-proxy');
+var proxy = new httpProxy.RoutingProxy();
 var redis  = require('redis'),
     client = redis.createClient();
 var events = require('events'),
@@ -130,11 +132,22 @@ var expireContent = function expireContent(cacheKey, cacheIt) {
     }
 }
 
+function getHost(headers)
+{
+  var parts = headers['host'].trim().split(':');
+  return parts[0].trim();
+}
+
+function getPort(headers)
+{
+  var parts = headers['host'].trim().split(':');
+  return (parts[1] || '80').trim();
+}
+
 var doRequest = function doRequest(req, res, cacheKey) {
 
-  var parts = req.headers['host'].trim().split(':');
-  var host = parts[0].trim();
-  var port = (parts[1] || '80').trim();
+  var host = getHost(req.headers);
+  var port = getPort(req.headers);
 
   dns.lookup(host, function (err, addresses) {
     if (err) throw err;
@@ -192,9 +205,14 @@ var server = http.createServer(function (req, res) {
     || (req.method != 'GET' && req.method != 'HEAD' )
   ) {
     // Force request
-    eventEmitter.emit('doRequest', req, res, cacheKey);
+    var host = getHost(req.headers);
+    var port = getPort(req.headers);
+    console.log('proxying request without storing');
+    proxy.proxyRequest(req, res, {
+        host: host,
+        port: port
+    });
   } else {
-
       client.hgetall(getHeadersKey(cacheKey), function(err, results) {
         
         if( results !== null ) {
