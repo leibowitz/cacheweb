@@ -5,7 +5,7 @@ var clone  = require('clone');
 var httpProxy = require('http-proxy');
 var proxy = new httpProxy.RoutingProxy();
 var redis  = require('redis'),
-    client = redis.createClient();
+    client = redis.createClient(6379, '127.0.0.1', {detect_buffers: true});
 var events = require('events'),
     eventEmitter = new events.EventEmitter();
 
@@ -103,6 +103,21 @@ function isConditional(req) {
     return false;
 }
 
+function isBinary(headers) {
+    var binary = false;
+
+    if( headers['content-type'] !== undefined ) {
+        var contentParts = headers['content-type'].split(';');
+        var contentType = contentParts[0].split('/');
+        if(contentType[0] == 'image') {
+            binary = true;
+        }
+    }
+
+    return binary;
+}
+
+
 var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
     
     if( cacheIt ) {
@@ -175,12 +190,17 @@ var doRequest = function doRequest(req, res, cacheKey) {
     var headers = clone(proxyResponse.headers);
     headers['x-cache'] = 'MISS';
 
-    res.writeHead(proxyResponse.statusCode, headers);
-    
     var cacheIt = canStore(proxyResponse.statusCode, proxyResponse.headers);
 
     eventEmitter.emit('cacheResponse', cacheKey, proxyResponse, cacheIt);
 
+    if( isBinary(headers) ) {
+        proxyResponse.setEncoding('binary');
+    }
+    else {
+        res.writeHead(proxyResponse.statusCode, headers);
+    }
+    
     proxyResponse.on('data', function (chunk) {
         res.write(chunk);
         eventEmitter.emit('cacheContent', cacheKey, cacheIt, chunk);
@@ -191,8 +211,8 @@ var doRequest = function doRequest(req, res, cacheKey) {
         res.end();
     });
 
-    
   });
+
   proxyRequest.end();
 }
 
@@ -226,11 +246,14 @@ var server = http.createServer(function (req, res) {
                 res.end();
             }
             else {
-                res.writeHead(results['statusCode'], headers);
 
                 if( req.method == 'HEAD') {
                     res.end();
                 } else {
+                    if( !isBinary(headers) ) {
+                        res.writeHead(results['statusCode'], headers);
+                    }
+
                     client.get(getBodyKey(cacheKey), function(err, reply) {
                         res.write(reply);
                         res.end();
