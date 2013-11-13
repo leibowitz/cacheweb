@@ -181,6 +181,7 @@ var doRequest = function doRequest(req, res, cacheKey) {
     //'agent': false,
     'method': req.method,
     'hostname': host,
+    'port': port,
     //'headers': req.headers,
     'path': req.url
   }, function(proxyResponse) {
