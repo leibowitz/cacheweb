@@ -178,14 +178,12 @@ var doRequest = function doRequest(req, res, cacheKey) {
 
   var proxyRequest = http.request({
     // Disable connection pooling
-    'agent': false,
+    //'agent': false,
     'method': req.method,
     'hostname': host,
-    'headers': req.headers,
+    //'headers': req.headers,
     'path': req.url
   }, function(proxyResponse) {
-    
-    delete proxyResponse.headers['content-length'];
     
     var headers = clone(proxyResponse.headers);
     headers['x-cache'] = 'MISS';
@@ -194,15 +192,20 @@ var doRequest = function doRequest(req, res, cacheKey) {
 
     eventEmitter.emit('cacheResponse', cacheKey, proxyResponse, cacheIt);
 
+    var encoding = 'utf8';
+    
+    res.writeHead(proxyResponse.statusCode, headers);
+    
+
     if( isBinary(headers) ) {
-        proxyResponse.setEncoding('binary');
+        encoding = 'binary';
+        proxyResponse.setEncoding(encoding);
     }
     else {
-        res.writeHead(proxyResponse.statusCode, headers);
     }
     
     proxyResponse.on('data', function (chunk) {
-        res.write(chunk);
+        res.write(chunk, encoding);
         eventEmitter.emit('cacheContent', cacheKey, cacheIt, chunk);
     });
 
@@ -250,12 +253,13 @@ var server = http.createServer(function (req, res) {
                 if( req.method == 'HEAD') {
                     res.end();
                 } else {
-                    if( !isBinary(headers) ) {
-                        res.writeHead(results['statusCode'], headers);
-                    }
+                    var binary = isBinary(headers);
+                    var encoding = binary ? 'binary' : 'utf8';
+
+                    res.writeHead(results['statusCode'], headers);
 
                     client.get(getBodyKey(cacheKey), function(err, reply) {
-                        res.write(reply);
+                        res.write(reply, encoding);
                         res.end();
                     });
                 }
