@@ -281,9 +281,18 @@ server.on('error', function(err){
     console.log(err);
 });
 
-var serverPort = 1337, 
-serverHostname = '127.0.0.1';
+var serverPort = 80, 
+serverHostname = '0.0.0.0';
 
+if( process.argv.length > 2 ) {
+    serverHostname = process.argv[2];
+}
+
+if( process.argv.length > 3 ) {
+    serverPort = process.argv[3];
+}
+
+console.log('Running on http://'+serverHostname+':'+serverPort+'/');
 server.listen(serverPort, serverHostname);
 
 eventEmitter.on('doRequest', doRequest);
