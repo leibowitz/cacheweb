@@ -1,0 +1,23 @@
+{
+  "name": "cacheweb",
+  "version": "0.1.0",
+  "description": "Caching GET HTTP responses in Redis",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/leibowitz/cacheweb.git"
+  },
+  "dependencies": {
+    "url": "0.7.x",
+    "clone": "0.1.x",
+    "http-proxy": "0.10.x",
+    "redis": "0.9.x",
+    "events": "0.5.x"
+  },
+  "author": "Gianni Moschini",
+  "license": "MIT"
+}
