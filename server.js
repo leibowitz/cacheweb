@@ -159,22 +159,23 @@ function getPort(headers)
   return (parts[1] || '80').trim();
 }
 
-var doRequest = function doRequest(req, res, cacheKey) {
-
-  var host = getHost(req.headers);
-  var port = getPort(req.headers);
-
+var checkRequest = function checkRequest(req, res, host, port) {
+  
   dns.lookup(host, function (err, addresses) {
     if (err) throw err;
 
     if( addresses == serverHostname && port == serverPort ) {
         // better stop now to avoid request loop
-        res.writeHead(400, {});
+        res.writeHead(500, {});
         res.end();
+    } else {
+        eventEmitter.emit('processRequest', req, res, host, port);
     }
   });
-  
-  delete req.headers['host'];
+
+}
+
+var doRequest = function doRequest(req, res, cacheKey, host, port) {
 
   var proxyRequest = http.request({
     // Disable connection pooling
@@ -218,20 +219,18 @@ var doRequest = function doRequest(req, res, cacheKey) {
   });
 
   proxyRequest.end();
+  
 }
 
-var server = http.createServer(function (req, res) {
-
-  var cacheKey = computeKey(req.headers['host'], req.url, req.method);
+var processRequest = function processRequest(req, res, host, port) {
   
+  var cacheKey = computeKey(req.headers['host'], req.url, req.method);
+
   if( (req.headers['cache-control'] !== undefined 
     && req.headers['cache-control'] == 'no-cache')
     || (req.method != 'GET' && req.method != 'HEAD' )
   ) {
     // Force request
-    var host = getHost(req.headers);
-    var port = getPort(req.headers);
-    console.log('proxying request without storing');
     proxy.proxyRequest(req, res, {
         host: host,
         port: port
@@ -268,7 +267,7 @@ var server = http.createServer(function (req, res) {
             }
         } else {
 
-          eventEmitter.emit('doRequest', req, res, cacheKey);
+          eventEmitter.emit('doRequest', req, res, cacheKey, host, port);
 
         }
 
@@ -276,7 +275,15 @@ var server = http.createServer(function (req, res) {
   }
 
 
-})
+};
+
+var server = http.createServer(function (req, res) {
+
+  var host = getHost(req.headers);
+  var port = getPort(req.headers);
+  
+  eventEmitter.emit('checkRequest', req, res, host, port);
+});
 
 server.on('error', function(err){
     console.log(err);
@@ -297,6 +304,8 @@ console.log('Running on http://'+serverHostname+':'+serverPort+'/');
 server.listen(serverPort, serverHostname);
 
 eventEmitter.on('doRequest', doRequest);
+eventEmitter.on('checkRequest', checkRequest);
+eventEmitter.on('processRequest', processRequest);
 eventEmitter.on('cacheResponse', cacheResponse);
 eventEmitter.on('cacheContent', cacheContent);
 eventEmitter.on('expireContent', expireContent);
