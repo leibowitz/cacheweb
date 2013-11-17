@@ -161,13 +161,13 @@ var expireContent = function expireContent(cacheKey, cacheIt) {
 
 var noHost = function noHost(req, res, host, port) {
     // Redirect to localhost
-    proxy.proxyRequest(req, res, {
+    /*proxy.proxyRequest(req, res, {
         host: '127.0.0.1',
         port: '80'
-    });
+    });*/
     // better stop now to avoid request loop
-    //res.writeHead(500, {});
-    //res.end();
+    res.writeHead(500, {});
+    res.end();
 };
 
 var checkRequest = function checkRequest(req, res, host, port) {
