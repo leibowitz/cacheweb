@@ -117,6 +117,18 @@ function isBinary(headers) {
     return binary;
 }
 
+function getHost(headers)
+{
+  var parts = headers['host'].trim().split(':');
+  return parts[0].trim();
+}
+
+function getPort(headers)
+{
+  var parts = headers['host'].trim().split(':');
+  return (parts[1] || '80').trim();
+}
+
 
 var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
     
@@ -147,17 +159,16 @@ var expireContent = function expireContent(cacheKey, cacheIt) {
     }
 }
 
-function getHost(headers)
-{
-  var parts = headers['host'].trim().split(':');
-  return parts[0].trim();
-}
-
-function getPort(headers)
-{
-  var parts = headers['host'].trim().split(':');
-  return (parts[1] || '80').trim();
-}
+var noHost = function noHost(req, res, host, port) {
+    // Redirect to localhost
+    proxy.proxyRequest(req, res, {
+        host: '127.0.0.1',
+        port: '80'
+    });
+    // better stop now to avoid request loop
+    //res.writeHead(500, {});
+    //res.end();
+};
 
 var checkRequest = function checkRequest(req, res, host, port) {
   
@@ -165,9 +176,7 @@ var checkRequest = function checkRequest(req, res, host, port) {
     if (err) throw err;
 
     if( addresses == serverHostname && port == serverPort ) {
-        // better stop now to avoid request loop
-        res.writeHead(500, {});
-        res.end();
+        eventEmitter.emit('noHost', req, res, host, port);
     } else {
         eventEmitter.emit('processRequest', req, res, host, port);
     }
@@ -309,7 +318,7 @@ eventEmitter.on('processRequest', processRequest);
 eventEmitter.on('cacheResponse', cacheResponse);
 eventEmitter.on('cacheContent', cacheContent);
 eventEmitter.on('expireContent', expireContent);
-
+eventEmitter.on('noHost', noHost);
 
 console.log('Server running at http://'+serverHostname+':'+serverPort+'/');
 
