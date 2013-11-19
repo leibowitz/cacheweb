@@ -160,6 +160,10 @@ var expireContent = function expireContent(cacheKey, cacheIt) {
 }
 
 var noHost = function noHost(req, res, host, port) {
+  // Redirect to localhost
+  if(debug) {
+    console.log('sending error to avoid request loop');
+  }
   /*proxy.proxyRequest(req, res, {
     host: '127.0.0.1',
     port: '80'
@@ -170,8 +174,14 @@ var noHost = function noHost(req, res, host, port) {
 };
 
 var checkRequest = function checkRequest(req, res, host, port) {
+  if(debug) {
+    console.log('doing dns lookup');
+  }
 
   dns.lookup(host, function (err, addresses) {
+    if(debug) {
+      console.log(addresses);
+    }
 
     if (err) throw err;
 
@@ -185,6 +195,10 @@ var checkRequest = function checkRequest(req, res, host, port) {
 }
 
 var doRequest = function doRequest(req, res, cacheKey, host, port) {
+
+  if(debug) {
+    console.log('doing http request to origin '+ host + ':' + port);
+  }
 
   var proxyRequest = http.request({
     // Disable connection pooling
@@ -201,9 +215,17 @@ var doRequest = function doRequest(req, res, cacheKey, host, port) {
 
     var cacheIt = canStore(proxyResponse.statusCode, proxyResponse.headers);
 
+    if(debug) {
+      console.log('got ' + proxyResponse.statusCode + ' response, will '+(cacheIt?'':'not')+' cache');
+    }
+
     eventEmitter.emit('cacheResponse', cacheKey, proxyResponse, cacheIt);
 
     var encoding = 'utf8';
+
+    if(debug) {
+      console.log('sending response');
+    }
 
     res.writeHead(proxyResponse.statusCode, headers);
 
@@ -228,6 +250,9 @@ var doRequest = function doRequest(req, res, cacheKey, host, port) {
   });
 
   proxyRequest.end();
+  if(debug) {
+    console.log('done');
+  }
 
 }
 
@@ -235,23 +260,38 @@ var processRequest = function processRequest(req, res, host, port) {
 
   var cacheKey = computeKey(req.headers.host, req.url, req.method);
 
+  if(debug) {
+    console.log(req.method);
+  }
   if( (req.headers['cache-control'] !== undefined 
         && req.headers['cache-control'] == 'no-cache')
       || (req.method != 'GET' && req.method != 'HEAD' )
     ) {
+      if(debug) {
+        console.log('request is asking for origin, proxying');
+      }
       // Force request
       proxy.proxyRequest(req, res, {
         host: host,
         port: port
       });
     } else {
+      if(debug) {
+        console.log('checking in cache');
+      }
       client.hgetall(getHeadersKey(cacheKey), function(err, results) {
 
         if( results !== null ) {
+          if(debug) {
+            console.log('found in cache');
+          }
           var headers = JSON.parse(results['headers']);
           headers['x-cache'] = 'HIT';
 
           if( isNotModified(req.headers, headers) ) {
+            if(debug) {
+              console.log('not modified');
+            }
             // answer to conditional requests
             headers['content-length'] = 0;
             res.writeHead(304, headers);
@@ -260,8 +300,14 @@ var processRequest = function processRequest(req, res, host, port) {
           else {
 
             if( req.method == 'HEAD') {
+              if(debug) {
+                console.log('head request');
+              }
               res.end();
             } else {
+              if(debug) {
+                console.log('returning full result from cache');
+              }
               var binary = isBinary(headers);
               var encoding = binary ? 'binary' : 'utf8';
 
@@ -275,6 +321,10 @@ var processRequest = function processRequest(req, res, host, port) {
 
           }
         } else {
+
+          if(debug) {
+            console.log('not found in cache');
+          }
 
           eventEmitter.emit('doRequest', req, res, cacheKey, host, port);
 
@@ -290,6 +340,7 @@ var server = http.createServer(function (req, res) {
 
   var host = getHost(req.headers);
   var port = getPort(req.headers);
+
   eventEmitter.emit('checkRequest', req, res, host, port);
 });
 
@@ -298,7 +349,8 @@ server.on('error', function(err){
 });
 
 var serverPort = 80, 
-    serverHostname = '0.0.0.0';
+    serverHostname = '0.0.0.0',
+    debug = true;
 
 if( process.argv.length > 2 ) {
   serverHostname = process.argv[2];
