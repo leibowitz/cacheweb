@@ -89,7 +89,7 @@ function isNotModified(req, resp) {
       && resp['last-modified'] !== undefined ) {
         var condDate = new Date(req['if-modified-since']);
         var lastModified = new Date(resp['last-modified']);
-        return condDate > lastModified;
+        return condDate >= lastModified;
       }
   return false;
 }
