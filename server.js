@@ -26,6 +26,31 @@ function getBodyKey(key) {
   return makeKeyField(key, 'body');
 }
 
+function splitString(str, separator) {
+  return str.trim().split(separator);
+}
+
+function getHeaderValues(str) {
+  var params = splitString(str, ',');
+
+  var values = {};
+
+  for(var idx in params) {
+    var parts = params[idx].trim().split('=');
+    if( parts.length > 0 ) {
+      var key = parts[0].trim();
+      if( parts.length >= 2 ) {
+        val = parts[1].trim();
+        values[ key ] = val;
+      } else {
+        values[ key ] = true;
+      }
+    }
+  }
+
+  return values;
+}
+
 function canStore(statusCode, headers) {
   // Do not cache 304 response to conditional requests
   if( isConditional(headers) && statusCode == 304 ) {
@@ -47,23 +72,7 @@ function canStore(statusCode, headers) {
     return false;
   }
 
-  var params = headers['cache-control'].trim().split(',');
-
-  var values = {};
-
-  for(var idx in params) {
-    if( params[idx].indexOf('=') !== -1 ) {
-      var parts = params[idx].trim().split('=');
-      key = parts[0].trim();
-      val = parts[1].trim();
-      if( key == 's-maxage' || key == 'max-age' ) {
-        val = parseInt(val);
-      }
-      values[ key ] = val;
-    } else {
-      values[ params[idx].trim() ] = 1;
-    }
-  }
+  var values = getHeaderValues(headers['cache-control']);
 
   if( 
       values.private !== undefined ||
@@ -75,10 +84,10 @@ function canStore(statusCode, headers) {
     }
 
   if( values['s-maxage'] !== undefined ) {
-    return values['s-maxage'];
+    return parseInt(values['s-maxage']);
   }
   else if( values['max-age'] !== undefined ) {
-    return values['max-age'];
+    return parseInt(values['max-age']);
   }
 
   return false;
