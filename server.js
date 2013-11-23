@@ -51,7 +51,7 @@ function canStore(statusCode, headers) {
 
   var values = {};
 
-  for(idx in params) {
+  for(var idx in params) {
     if( params[idx].indexOf('=') !== -1 ) {
       var parts = params[idx].trim().split('=');
       key = parts[0].trim();
@@ -66,7 +66,7 @@ function canStore(statusCode, headers) {
   }
 
   if( 
-      values['private'] !== undefined ||
+      values.private !== undefined ||
       values['no-cache'] !== undefined ||
       values['no-store'] !== undefined 
     ) {
@@ -85,8 +85,8 @@ function canStore(statusCode, headers) {
 }
 
 function isNotModified(req, resp) {
-  if( req['if-modified-since'] !== undefined 
-      && resp['last-modified'] !== undefined ) {
+  if( req['if-modified-since'] !== undefined && 
+      resp['last-modified'] !== undefined ) {
         var condDate = new Date(req['if-modified-since']);
         var lastModified = new Date(resp['last-modified']);
         return condDate >= lastModified;
@@ -96,8 +96,8 @@ function isNotModified(req, resp) {
 
 function isConditional(req) {
 
-  if( req['if-modified-since'] !== undefined
-      || req['if-none-match'] !== undefined ) {
+  if( req['if-modified-since'] !== undefined || 
+      req['if-none-match'] !== undefined ) {
         return true;
       }
   return false;
@@ -119,22 +119,22 @@ function isBinary(headers) {
 
 function getHost(headers)
 {
-  var parts = headers['host'].trim().split(':');
+  var parts = headers.host.trim().split(':');
   return parts[0].trim();
 }
 
 function getPort(headers)
 {
-  var parts = headers['host'].trim().split(':');
+  var parts = headers.host.trim().split(':');
   return (parts[1] || '80').trim();
 }
-
 
 var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
 
   if( cacheIt ) {
     var headersKey = getHeadersKey(cacheKey);
     var bodyKey = getBodyKey(cacheKey);
+
 
     client.hset(headersKey, 'statusCode', proxyResponse.statusCode);
     client.hset(headersKey, 'headers', JSON.stringify(proxyResponse.headers));
@@ -143,21 +143,21 @@ var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
     client.del(bodyKey);
   }
 
-}
+};
 
 var cacheContent = function cacheContent(cacheKey, cacheIt, chunk) {
   if( cacheIt ) {
     var bodyKey = getBodyKey(cacheKey);
     client.append(bodyKey, chunk);
   }
-}
+};
 
 var expireContent = function expireContent(cacheKey, cacheIt) {
   if( cacheIt ) {
     var bodyKey = getBodyKey(cacheKey);
     client.expire(bodyKey, cacheIt);
   }
-}
+};
 
 var noHost = function noHost(req, res, host, port) {
   // Redirect to localhost
@@ -192,7 +192,7 @@ var checkRequest = function checkRequest(req, res, host, port) {
     }
   });
 
-}
+};
 
 var doRequest = function doRequest(req, res, cacheKey, host, port) {
 
@@ -254,7 +254,7 @@ var doRequest = function doRequest(req, res, cacheKey, host, port) {
     console.log('done');
   }
 
-}
+};
 
 var processRequest = function processRequest(req, res, host, port) {
 
@@ -263,9 +263,9 @@ var processRequest = function processRequest(req, res, host, port) {
   if(debug) {
     console.log(req.method);
   }
-  if( (req.headers['cache-control'] !== undefined 
-        && req.headers['cache-control'] == 'no-cache')
-      || (req.method != 'GET' && req.method != 'HEAD' )
+  if( (req.headers['cache-control'] !== undefined && 
+       req.headers['cache-control'] == 'no-cache') || 
+         ( req.method != 'GET' && req.method != 'HEAD' )
     ) {
       if(debug) {
         console.log('request is asking for origin, proxying');
@@ -285,7 +285,8 @@ var processRequest = function processRequest(req, res, host, port) {
           if(debug) {
             console.log('found in cache');
           }
-          var headers = JSON.parse(results['headers']);
+
+          var headers = JSON.parse(results.headers);
           headers['x-cache'] = 'HIT';
 
           if( isNotModified(req.headers, headers) ) {
@@ -311,7 +312,7 @@ var processRequest = function processRequest(req, res, host, port) {
               var binary = isBinary(headers);
               var encoding = binary ? 'binary' : 'utf8';
 
-              res.writeHead(results['statusCode'], headers);
+              res.writeHead(results.statusCode, headers);
 
               client.get(getBodyKey(cacheKey), function(err, reply) {
                 res.write(reply, encoding);
