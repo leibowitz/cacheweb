@@ -147,9 +147,11 @@ var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
     var bodyKey = getBodyKey(cacheKey);
 
 
-    client.hset(headersKey, 'statusCode', proxyResponse.statusCode);
-    client.hset(headersKey, 'headers', JSON.stringify(proxyResponse.headers));
-    client.hset(headersKey, 'timestamp', getTimeNow());
+    client.hmset(headersKey, 
+                'statusCode', proxyResponse.statusCode,
+                'headers', JSON.stringify(proxyResponse.headers),
+                'timestamp', getTimeNow()
+    );
     client.expire(headersKey, cacheIt.toString());
 
     client.del(bodyKey);
