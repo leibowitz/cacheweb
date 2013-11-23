@@ -223,15 +223,19 @@ var doRequest = function doRequest(req, res, cacheKey, host, port) {
     console.log('doing http request to origin '+ host + ':' + port);
   }
 
-  var proxyRequest = http.request({
+  var urlinfo = url.parse(req.url);
+
+  var options = {
     // Disable connection pooling
     //'agent': false,
     'method': req.method,
-      'hostname': host,
-      'port': port,
-      //'headers': req.headers,
-      'path': req.url
-  }, function(proxyResponse) {
+    'hostname': host,
+    'port': port,
+    //'headers': req.headers,
+    'path': urlinfo.path
+  };
+
+  var proxyRequest = http.request(options, function(proxyResponse) {
 
     var headers = clone(proxyResponse.headers);
     headers['x-cache'] = 'MISS';
@@ -256,8 +260,6 @@ var doRequest = function doRequest(req, res, cacheKey, host, port) {
     if( isBinary(headers) ) {
       encoding = 'binary';
       proxyResponse.setEncoding(encoding);
-    }
-    else {
     }
 
     proxyResponse.on('data', function (chunk) {
