@@ -129,6 +129,17 @@ function getPort(headers)
   return (parts[1] || '80').trim();
 }
 
+function getTimeNow()
+{
+  var now = new Date();
+  return now.getTime();
+}
+
+function getAge(timestamp)
+{
+  return Math.floor((getTimeNow() - timestamp)/1000);
+}
+
 var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
 
   if( cacheIt ) {
@@ -138,6 +149,7 @@ var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
 
     client.hset(headersKey, 'statusCode', proxyResponse.statusCode);
     client.hset(headersKey, 'headers', JSON.stringify(proxyResponse.headers));
+    client.hset(headersKey, 'timestamp', getTimeNow());
     client.expire(headersKey, cacheIt.toString());
 
     client.del(bodyKey);
@@ -288,6 +300,7 @@ var processRequest = function processRequest(req, res, host, port) {
 
           var headers = JSON.parse(results.headers);
           headers['x-cache'] = 'HIT';
+          headers.age = getAge(results.timestamp);
 
           if( isNotModified(req.headers, headers) ) {
             if(debug) {
