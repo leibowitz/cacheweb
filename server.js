@@ -51,12 +51,7 @@ function getHeaderValues(str) {
   return values;
 }
 
-function canStore(statusCode, headers) {
-  // Do not cache 304 response to conditional requests
-  if( isConditional(headers) && statusCode == 304 ) {
-    return false;
-  }
-
+function canStore(statusCode, headers, cacheKey) {
   // rules are
   // if not private
   // and not no-store nor no cache
@@ -240,8 +235,11 @@ var doRequest = function doRequest(req, res, cacheKey, host, port) {
     var headers = clone(proxyResponse.headers);
     headers['x-cache'] = 'MISS';
 
-    var cacheIt = canStore(proxyResponse.statusCode, proxyResponse.headers);
-
+    // Do not cache 304 response to conditional requests
+    var cacheIt = 
+      !isConditional(req.headers) || proxyResponse.statusCode != 304 ? 
+      canStore(proxyResponse.statusCode, proxyResponse.headers, cacheKey) : false;
+  
     if(debug) {
       console.log('got ' + proxyResponse.statusCode + ' response, will '+(cacheIt?'':'not')+' cache');
     }
