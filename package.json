@@ -14,7 +14,7 @@
   "dependencies": {
     "url": "0.7.x",
     "clone": "0.1.x",
-    "http-proxy": "0.10.x",
+    "http-proxy": "https://github.com/samalba/node-http-proxy/tarball/8e277989d2d05edaee65e524fb4fba9142c52aa5",
     "redis": "0.9.x",
     "events": "0.5.x"
   },
