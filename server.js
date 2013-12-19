@@ -339,7 +339,9 @@ var processRequest = function processRequest(req, res, host, port) {
               res.writeHead(results.statusCode, headers);
 
               client.get(getBodyKey(cacheKey), function(err, reply) {
-                res.write(reply, encoding);
+                if(reply !== null) {
+                  res.write(reply, encoding);
+                }
                 res.end();
               });
             }
