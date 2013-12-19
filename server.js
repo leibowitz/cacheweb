@@ -26,6 +26,9 @@ function getBodyKey(key) {
   return makeKeyField(key, 'body');
 }
 
+function isExpired(headers, age) {
+}
+
 function splitString(str, separator) {
   return str.trim().split(separator);
 }
@@ -144,6 +147,13 @@ function getAge(timestamp)
   return Math.floor((getTimeNow() - timestamp)/1000);
 }
 
+function getExpire(cacheIt)
+{
+  // even after content expired keep it for 
+  // a little bit longer
+  return cacheIt+3600;
+}
+
 var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
 
   if( cacheIt ) {
@@ -154,9 +164,11 @@ var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
     client.hmset(headersKey, 
                 'statusCode', proxyResponse.statusCode,
                 'headers', JSON.stringify(proxyResponse.headers),
-                'timestamp', getTimeNow()
+                'timestamp', getTimeNow(),
+                'cacheIt', cacheIt
     );
-    client.expire(headersKey, cacheIt.toString());
+
+    client.expire(headersKey, getExpire(cacheIt));
 
     client.del(bodyKey);
   }
@@ -173,7 +185,7 @@ var cacheContent = function cacheContent(cacheKey, cacheIt, chunk) {
 var expireContent = function expireContent(cacheKey, cacheIt) {
   if( cacheIt ) {
     var bodyKey = getBodyKey(cacheKey);
-    client.expire(bodyKey, cacheIt);
+    client.expire(bodyKey, getExpire(cacheIt));
   }
 };
 
@@ -201,9 +213,11 @@ var checkRequest = function checkRequest(req, res, host, port) {
       console.log(addresses);
     }
 
-    if (err) throw err;
+    if (err) {
+      console.log(err);
+    }
 
-    if( addresses == serverHostname && port == serverPort ) {
+    if( err || !addresses || (addresses == serverHostname && port == serverPort) ) {
       eventEmitter.emit('noHost', req, res, host, port);
     } else {
       eventEmitter.emit('processRequest', req, res, host, port);
@@ -220,17 +234,31 @@ var doRequest = function doRequest(req, res, cacheKey, host, port) {
 
   var urlinfo = url.parse(req.url);
 
+  console.log(req.method + ' ' + req.url);
+  console.log(req.headers['accept-encoding']);
+
+  var headers = req.headers;
+  //console.log(headers['accept-encoding']);
+  delete headers['accept-encoding'];
+  //headers['accept-encoding'] = 'gzip';
+  //delete headers.connection;
+  console.log(headers);
+
   var options = {
     // Disable connection pooling
     //'agent': false,
     'method': req.method,
     'hostname': host,
     'port': port,
-    //'headers': req.headers,
+    //'headers': headers,
     'path': urlinfo.path
   };
 
   var proxyRequest = http.request(options, function(proxyResponse) {
+
+    console.log('received response');
+    console.log(proxyResponse.headers['content-encoding']);
+    console.log(proxyResponse.statusCode);
 
     var headers = clone(proxyResponse.headers);
     headers['x-cache'] = 'MISS';
@@ -272,7 +300,12 @@ var doRequest = function doRequest(req, res, cacheKey, host, port) {
 
   });
 
+  proxyRequest.on('error', function(err){
+    console.log('error ' + err);
+  });
+
   proxyRequest.end();
+
   if(debug) {
     console.log('done');
   }
@@ -286,19 +319,6 @@ var processRequest = function processRequest(req, res, host, port) {
   if(debug) {
     console.log(req.method);
   }
-  if( (req.headers['cache-control'] !== undefined && 
-       req.headers['cache-control'] == 'no-cache') || 
-         ( req.method != 'GET' && req.method != 'HEAD' )
-    ) {
-      if(debug) {
-        console.log('request is asking for origin, proxying');
-      }
-      // Force request
-      proxy.proxyRequest(req, res, {
-        host: host,
-        port: port
-      });
-    } else {
       if(debug) {
         console.log('checking in cache');
       }
@@ -310,8 +330,15 @@ var processRequest = function processRequest(req, res, host, port) {
           }
 
           var headers = JSON.parse(results.headers);
+          
+          var age = getAge(results.timestamp);
+
+          if(isExpired(headers, age)) {
+            // do conditional request to server
+          }
+
           headers['x-cache'] = 'HIT';
-          headers.age = getAge(results.timestamp);
+          headers.age = age;
 
           if( isNotModified(req.headers, headers) ) {
             if(debug) {
@@ -358,21 +385,38 @@ var processRequest = function processRequest(req, res, host, port) {
         }
 
       });
-    }
 
 
 };
 
 var server = http.createServer(function (req, res) {
 
+  req.on('error', function(err){
+    console.log('req error' + err);
+  });
+
   var host = getHost(req.headers);
   var port = getPort(req.headers);
 
-  eventEmitter.emit('checkRequest', req, res, host, port);
+  if( (req.headers['cache-control'] !== undefined && 
+       req.headers['cache-control'] == 'no-cache') || 
+         ( req.method != 'GET' && req.method != 'HEAD' )
+    ) {
+      if(debug) {
+        console.log('request is asking for origin, proxying');
+      }
+      // Force request
+      proxy.proxyRequest(req, res, {
+        host: host,
+        port: port
+      });
+  } else {
+    eventEmitter.emit('checkRequest', req, res, host, port);
+  }
 });
 
 server.on('error', function(err){
-  console.log(err);
+  console.log('server error' + err);
 });
 
 var serverPort = 80, 
