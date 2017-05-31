@@ -1,13 +1,24 @@
+
+const crypto = require('crypto'),
+          fs = require("fs");
 var http = require('http');
+var https = require('https');
 var dns = require('dns');
 var url  = require('url');
+var net = require('net');
+var tls = require('tls');
 var clone  = require('clone');
 var httpProxy = require('http-proxy');
 var proxy = new httpProxy.RoutingProxy();
-var redis  = require('redis'),
-    client = redis.createClient(6379, '127.0.0.1', {detect_buffers: true});
+//var redis  = require('redis'),
+//    client = redis.createClient(6379, '127.0.0.1', {detect_buffers: true});
 var events = require('events'),
   eventEmitter = new events.EventEmitter();
+
+var privateKey = fs.readFileSync('privatekey.pem');
+var certificate = fs.readFileSync('certificate.pem');
+var opts = { key: privateKey, cert: certificate };
+
 
 
 function computeKey(host, path, method) {
@@ -151,14 +162,14 @@ var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
     var bodyKey = getBodyKey(cacheKey);
 
 
-    client.hmset(headersKey, 
+    /*client.hmset(headersKey, 
                 'statusCode', proxyResponse.statusCode,
                 'headers', JSON.stringify(proxyResponse.headers),
                 'timestamp', getTimeNow()
     );
     client.expire(headersKey, cacheIt.toString());
 
-    client.del(bodyKey);
+    client.del(bodyKey);*/
   }
 
 };
@@ -166,14 +177,14 @@ var cacheResponse = function cacheResponse(cacheKey, proxyResponse, cacheIt) {
 var cacheContent = function cacheContent(cacheKey, cacheIt, chunk) {
   if( cacheIt ) {
     var bodyKey = getBodyKey(cacheKey);
-    client.append(bodyKey, chunk);
+    //client.append(bodyKey, chunk);
   }
 };
 
 var expireContent = function expireContent(cacheKey, cacheIt) {
   if( cacheIt ) {
     var bodyKey = getBodyKey(cacheKey);
-    client.expire(bodyKey, cacheIt);
+    //client.expire(bodyKey, cacheIt);
   }
 };
 
@@ -201,7 +212,7 @@ var checkRequest = function checkRequest(req, res, host, port) {
       console.log(addresses);
     }
 
-    if (err) throw err;
+    if (err) { console.log( err) };
 
     if( addresses == serverHostname && port == serverPort ) {
       eventEmitter.emit('noHost', req, res, host, port);
@@ -230,7 +241,15 @@ var doRequest = function doRequest(req, res, cacheKey, host, port) {
     'path': urlinfo.path
   };
 
-  var proxyRequest = http.request(options, function(proxyResponse) {
+  var httpclient = null;
+
+  if(port == 443) {
+    httpclient = https.request;
+  } else {
+    httpclient = http.request;
+  }
+
+  var proxyRequest = httpclient(options, function(proxyResponse) {
 
     var headers = clone(proxyResponse.headers);
     headers['x-cache'] = 'MISS';
@@ -302,7 +321,7 @@ var processRequest = function processRequest(req, res, host, port) {
       if(debug) {
         console.log('checking in cache');
       }
-      client.hgetall(getHeadersKey(cacheKey), function(err, results) {
+      /*client.hgetall(getHeadersKey(cacheKey), function(err, results) {
 
         if( results !== null ) {
           if(debug) {
@@ -347,7 +366,7 @@ var processRequest = function processRequest(req, res, host, port) {
             }
 
           }
-        } else {
+        } else {*/
 
           if(debug) {
             console.log('not found in cache');
@@ -355,25 +374,13 @@ var processRequest = function processRequest(req, res, host, port) {
 
           eventEmitter.emit('doRequest', req, res, cacheKey, host, port);
 
-        }
+        /*}
 
-      });
+      });*/
     }
 
 
 };
-
-var server = http.createServer(function (req, res) {
-
-  var host = getHost(req.headers);
-  var port = getPort(req.headers);
-
-  eventEmitter.emit('checkRequest', req, res, host, port);
-});
-
-server.on('error', function(err){
-  console.log(err);
-});
 
 var serverPort = 80, 
     serverHostname = '0.0.0.0',
@@ -388,7 +395,89 @@ if( process.argv.length > 3 ) {
 }
 
 console.log('Running on http://'+serverHostname+':'+serverPort+'/');
+
+
+// HTTP
+
+var server = http.createServer(function (req, res) {
+  console.log(req.headers);
+
+  var host = getHost(req.headers);
+  var port = getPort(req.headers);
+
+  if(port == serverPort) { 
+    port = 80;
+  }
+
+  eventEmitter.emit('checkRequest', req, res, host, port);
+});
+
+server.on('error', function(err){
+  console.log(err);
+});
+
+
+server.on('connect', function(req, cltSocket, head) {
+    console.log('connect to ' + req.url);
+
+  var srvUrl = url.parse('http://' + req.url);
+    console.log('opening socket to ' + srvUrl.hostname);
+
+var options = {
+  // These are necessary only if using the client certificate authentication
+  key: fs.readFileSync('privatekey.pem'),
+  cert: fs.readFileSync('certificate.pem')//,
+
+  // This is necessary only if the server uses the self-signed certificate
+  //ca: [ fs.readFileSync('server-cert.pem') ]
+};
+
+  var srvSocket = net.connect(srvUrl.port, srvUrl.hostname, function() {
+    cltSocket.write('HTTP/1.1 200 Connection Established\r\n' +
+                    'Proxy-agent: Node-Proxy\r\n' +
+                    '\r\n');
+    srvSocket.write(head);
+
+    //srvSocket.pipe(cltSocket);
+    //cltSocket.pipe(srvSocket);
+  });
+cltSocket.on('data', function(data) {
+  srvSocket.write(data);
+});
+cltSocket.on('end', function() {
+  srvSocket.end()
+});
+srvSocket.on('data', function(data) {
+  console.log(data.toString());
+  cltSocket.write(data);
+});
+srvSocket.on('end', function() {
+  cltSocket.end()
+});
+
+srvSocket.on('error', function(err){
+  console.log(err);
+});
+
+cltSocket.on('error', function(err){
+  console.log(err);
+});
+
+});
+server.on('upgrade', function(req, socket, head) {
+    console.log('upgrade requested');
+
+  socket.write('HTTP/1.1 101 Web Socket Protocol Handshake\r\n' +
+               'Upgrade: WebSocket\r\n' +
+               'Connection: Upgrade\r\n' +
+               '\r\n');
+
+  //socket.pipe(socket); // echo back
+    // I don't know how to forward the request and send the response to client
+});
+
 server.listen(serverPort, serverHostname);
+
 
 eventEmitter.on('doRequest', doRequest);
 eventEmitter.on('checkRequest', checkRequest);
@@ -399,4 +488,27 @@ eventEmitter.on('expireContent', expireContent);
 eventEmitter.on('noHost', noHost);
 
 console.log('Server running at http://'+serverHostname+':'+serverPort+'/');
+
+
+// HTTPS
+var httpsserverPort = 8443;
+
+var httpsserver = https.createServer(opts, function (req, res) {
+  console.log(req.headers);
+  var host = getHost(req.headers);
+  var port = getPort(req.headers);
+  port = 443;
+
+  eventEmitter.emit('checkRequest', req, res, host, port);
+});
+
+httpsserver.on('error', function(err){
+  console.log(err);
+});
+
+httpsserver.listen(httpsserverPort, serverHostname);
+
+
+
+console.log('Server running at https://'+serverHostname+':'+httpsserverPort+'/');
 
